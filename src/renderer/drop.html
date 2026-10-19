@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body {
+  width:170px; background:transparent; overflow:hidden;
+  font-family:-apple-system,'Segoe UI',sans-serif;
+  user-select:none; -webkit-app-region:no-drag;
+}
+
+/* ── Move handle ── */
+#handle {
+  height:18px; width:100%; display:flex; align-items:center;
+  justify-content:center; cursor:grab;
+  opacity:0; transition:opacity 0.2s; -webkit-app-region:no-drag;
+}
+#handle:active { cursor:grabbing; }
+#handle span { font-size:11px; color:rgba(255,255,255,0.6); letter-spacing:3px; }
+body:hover #handle { opacity:1; }
+
+/* ── Drop zone circle ── */
+#zone {
+  width:160px; height:160px; margin:0 auto;
+  border-radius:24px;
+  background:linear-gradient(135deg,#FF6B00,#FF9A3C);
+  display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:8px;
+  box-shadow:0 6px 24px rgba(255,107,0,0.45);
+  transition:transform 0.15s, box-shadow 0.15s, background 0.15s;
+  position:relative; overflow:hidden; cursor:default;
+}
+#zone.hover {
+  transform:scale(1.06);
+  background:linear-gradient(135deg,#FF4500,#FF7A00);
+  box-shadow:0 10px 36px rgba(255,69,0,0.7);
+}
+#zone.busy { cursor:wait; }
+
+.icon { font-size:38px; pointer-events:none; }
+.label {
+  font-size:10px; font-weight:600; color:rgba(255,255,255,0.9);
+  text-align:center; pointer-events:none; letter-spacing:0.3px;
+}
+
+/* progress ring */
+#progress-wrap {
+  position:absolute; inset:0; display:flex;
+  align-items:center; justify-content:center;
+  background:rgba(0,0,0,0.55); border-radius:24px;
+  opacity:0; transition:opacity 0.2s; pointer-events:none;
+}
+#progress-wrap.show { opacity:1; pointer-events:all; }
+#progress-ring { transform:rotate(-90deg); }
+.ring-bg { fill:none; stroke:rgba(255,255,255,0.2); stroke-width:6; }
+.ring-fg { fill:none; stroke:#fff; stroke-width:6; stroke-linecap:round;
+           transition:stroke-dashoffset 0.4s; }
+#pct-label {
+  position:absolute; font-size:13px; font-weight:700; color:#fff;
+}
+#converting-label {
+  position:absolute; bottom:18px; font-size:9px; color:rgba(255,255,255,0.8);
+  font-weight:600; letter-spacing:0.5px;
+}
+
+/* ── Toast ── */
+#toast {
+  margin:6px 5px 0; padding:6px 8px; border-radius:10px;
+  font-size:9px; font-weight:600; color:#fff; text-align:center;
+  background:rgba(0,0,0,0.7); opacity:0; transition:opacity 0.25s;
+  word-break:break-all; line-height:1.4; min-height:28px;
+}
+#toast.show { opacity:1; }
+#toast.ok  { background:rgba(34,197,94,0.9); }
+#toast.err { background:rgba(239,68,68,0.9); }
+#toast .open-link {
+  display:block; margin-top:3px; color:#fff; text-decoration:underline;
+  cursor:pointer; font-size:8px; opacity:0.8;
+}
+
+/* ── Bottom bar ── */
+#bottom {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:4px 8px; margin-top:4px;
+}
+.icon-btn {
+  background:none; border:none; cursor:pointer;
+  font-size:14px; opacity:0.6; transition:opacity 0.15s; padding:2px;
+}
+.icon-btn:hover { opacity:1; }
+
+/* ── History panel ── */
+#history-panel {
+  background:rgba(20,20,20,0.92); border-radius:12px;
+  margin:4px 5px 0; padding:6px; max-height:0; overflow:hidden;
+  transition:max-height 0.3s;
+}
+#history-panel.open { max-height:200px; overflow-y:auto; }
+.h-item {
+  display:flex; align-items:center; gap:6px; padding:4px 2px;
+  border-bottom:1px solid rgba(255,255,255,0.07); cursor:pointer;
+}
+.h-item:last-child { border:none; }
+.h-item:hover { background:rgba(255,255,255,0.05); border-radius:6px; }
+.h-name { font-size:9px; color:#fff; flex:1; overflow:hidden;
+          text-overflow:ellipsis; white-space:nowrap; }
+.h-fmt  { font-size:8px; color:#FF9A3C; font-weight:700; }
+.h-time { font-size:7px; color:rgba(255,255,255,0.4); }
+#history-empty { font-size:9px; color:rgba(255,255,255,0.4); text-align:center; padding:8px 0; }
+</style>
+</head>
+<body>
+
+<div id="handle"><span>⠿</span></div>
+
+<div id="zone">
+  <div class="icon">🍊</div>
+  <div class="label">Drop file here</div>
+
+  <div id="progress-wrap">
+    <svg id="progress-ring" width="90" height="90" viewBox="0 0 90 90">
+      <circle class="ring-bg" cx="45" cy="45" r="36"/>
+      <circle class="ring-fg" id="ring-fg" cx="45" cy="45" r="36"
+              stroke-dasharray="226" stroke-dashoffset="226"/>
+    </svg>
+    <div id="pct-label">0%</div>
+    <div id="converting-label">CONVERTING</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="bottom">
+  <button class="icon-btn" id="hist-btn"  title="History">🕐</button>
+  <button class="icon-btn" id="settings-btn" title="Settings">⚙️</button>
+</div>
+
+<div id="history-panel">
+  <div id="history-empty">No conversions yet</div>
+</div>
+
+<script>
+const zone     = document.getElementById('zone');
+const toast    = document.getElementById('toast');
+const progWrap = document.getElementById('progress-wrap');
+const ringFg   = document.getElementById('ring-fg');
+const pctLabel = document.getElementById('pct-label');
+const histBtn  = document.getElementById('hist-btn');
+const histPanel= document.getElementById('history-panel');
+const CIRCUM   = 226;
+
+function setProgress(pct) {
+  pct = Math.max(0, Math.min(100, pct));
+  ringFg.style.strokeDashoffset = CIRCUM - (CIRCUM * pct / 100);
+  pctLabel.textContent = pct + '%';
+}
+
+function showProgress(show) {
+  progWrap.classList.toggle('show', show);
+  zone.classList.toggle('busy', show);
+}
+
+function showToast(msg, type, outPath) {
+  toast.innerHTML = msg;
+  if (outPath) {
+    const a = document.createElement('span');
+    a.className = 'open-link';
+    a.textContent = '📂 Open file';
+    a.onclick = () => window.api.openFile(outPath);
+    toast.appendChild(a);
+  }
+  toast.className = 'show ' + (type || '');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { toast.className = ''; }, 5000);
+}
+
+// Drag events
+document.addEventListener('dragover',  e => { e.preventDefault(); e.stopPropagation(); });
+document.addEventListener('dragleave', e => { e.preventDefault(); e.stopPropagation(); });
+document.addEventListener('drop',      e => { e.preventDefault(); e.stopPropagation(); });
+
+zone.addEventListener('dragover', e => {
+  e.preventDefault(); e.stopPropagation();
+  e.dataTransfer.dropEffect = 'copy';
+  zone.classList.add('hover');
+});
+zone.addEventListener('dragleave', e => {
+  e.preventDefault(); zone.classList.remove('hover');
+});
+zone.addEventListener('drop', e => {
+  e.preventDefault(); e.stopPropagation();
+  zone.classList.remove('hover');
+  const files = e.dataTransfer.files;
+  if (!files || !files.length) { showToast('No file detected', 'err'); return; }
+  const fp = files[0].path;
+  if (!fp) { showToast('Could not read path', 'err'); return; }
+  showToast('Opening menu…', '');
+  window.api.sendFileDrop(fp);
+});
+
+// Progress
+window.api.onProgress(({ pct }) => {
+  if (pct === 0) { setProgress(0); showProgress(true); }
+  else if (pct === 100 || pct === -1) { showProgress(false); }
+  else setProgress(pct);
+});
+
+// Result
+window.api.onConvertResult(({ success, outPath, error }) => {
+  showProgress(false);
+  if (success) {
+    const name = (outPath || '').split('/').pop();
+    showToast('✓ ' + name, 'ok', outPath);
+  } else {
+    showToast('✗ ' + (error || 'Failed').slice(0, 80), 'err');
+  }
+});
+
+// History
+window.api.onHistoryUpdate((items) => {
+  const panel = document.getElementById('history-panel');
+  const empty = document.getElementById('history-empty');
+  if (!items.length) { empty.style.display='block'; return; }
+  empty.style.display = 'none';
+  // rebuild
+  [...panel.querySelectorAll('.h-item')].forEach(el => el.remove());
+  items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'h-item';
+    row.title = item.outPath;
+    const ago = Math.round((Date.now() - item.time)/60000);
+    row.innerHTML = `
+      <span class="h-name">${item.filename}</span>
+      <span class="h-fmt">${item.target.toUpperCase().slice(0,6)}</span>
+      <span class="h-time">${ago < 1 ? 'just now' : ago + 'm ago'}</span>`;
+    row.onclick = () => window.api.openFile(item.outPath);
+    panel.appendChild(row);
+  });
+});
+
+// IPC-based drag (works on Linux X11 — CSS -webkit-app-region doesn't)
+const handle = document.getElementById('handle');
+let dragging = false, lastX = 0, lastY = 0;
+
+handle.addEventListener('mousedown', e => {
+  dragging = true; lastX = e.screenX; lastY = e.screenY;
+  e.preventDefault();
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const dx = e.screenX - lastX;
+  const dy = e.screenY - lastY;
+  lastX = e.screenX; lastY = e.screenY;
+  if (dx !== 0 || dy !== 0) window.api.dragMove(dx, dy);
+});
+window.addEventListener('mouseup', () => { dragging = false; });
+
+// Buttons
+histBtn.addEventListener('click', () => histPanel.classList.toggle('open'));
+document.getElementById('settings-btn').addEventListener('click', () => window.api.openSettings());
+</script>
+</body>
+</html>
