@@ -3,6 +3,8 @@ const path = require('path');
 const settings = require('./settings');
 const { getOptions, convert } = require('./converter');
 
+app.setName('Tangerine');
+
 let dropWin    = null;
 let radialWin  = null;
 let settingsWin= null;
