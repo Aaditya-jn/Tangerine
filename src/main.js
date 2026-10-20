@@ -14,15 +14,15 @@ function createDropWindow() {
 
   dropWin = new BrowserWindow({
     width: 170,
-    height: 230,
+    height: 270,
     x: Math.round(width / 2 - 85),
-    y: Math.round(height / 2 - 115),
+    y: Math.round(height / 2 - 135),
     frame: false,
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: false,
     transparent: true,
-    focusable: false,
+    focusable: true,
     icon: path.join(__dirname, '../assets/icon.png'),
     webPreferences: {
       nodeIntegration: false,
@@ -33,6 +33,8 @@ function createDropWindow() {
 
   dropWin.loadFile(path.join(__dirname, 'renderer', 'drop.html'));
   dropWin.setAlwaysOnTop(true, 'screen-saver');
+
+  dropWin.on('focus', () => dropWin.blur());
 
   dropWin.on('closed', () => { dropWin = null; });
 }

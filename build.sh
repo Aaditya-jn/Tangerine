@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Tangerine – one-shot build script
-# Builds the AppImage and optionally installs it
-
 set -e
 cd "$(dirname "$0")"
 
@@ -12,23 +9,17 @@ echo "🔨 Building AppImage..."
 npx electron-builder --linux AppImage --publish never
 
 APPIMAGE=$(find dist -name "*.AppImage" | head -1)
+if [ -z "$APPIMAGE" ]; then echo "❌ Build failed"; exit 1; fi
 
-if [ -z "$APPIMAGE" ]; then
-  echo "❌ Build failed — no AppImage found in dist/"
-  exit 1
-fi
-
-echo ""
 echo "✅ Built: $APPIMAGE"
-echo ""
 
-read -p "Install to ~/Applications and add to autostart? [y/N] " REPLY
+read -p "Install to ~/Applications? [y/N] " REPLY
 if [[ "$REPLY" =~ ^[Yy]$ ]]; then
   mkdir -p ~/Applications
   cp "$APPIMAGE" ~/Applications/Tangerine.AppImage
   chmod +x ~/Applications/Tangerine.AppImage
+  cp assets/icon.png ~/Applications/tangerine.png
 
-  # Desktop entry (so it shows in app launchers)
   mkdir -p ~/.local/share/applications
   cat > ~/.local/share/applications/tangerine.desktop <<DESK
 [Desktop Entry]
@@ -39,15 +30,17 @@ Icon=$HOME/Applications/tangerine.png
 Terminal=false
 Type=Application
 Categories=Utility;
-StartupNotify=true
+StartupNotify=false
+StartupWMClass=Tangerine
 DESK
 
-  # Copy icon for launcher
-  cp assets/icon.png ~/Applications/tangerine.png
+  update-desktop-database ~/.local/share/applications 2>/dev/null || true
+  echo "✅ Installed"
 
-  # Autostart
-  mkdir -p ~/.config/autostart
-  cat > ~/.config/autostart/tangerine.desktop <<AUTO
+  read -p "Launch at login? [y/N] " AUTOSTART
+  if [[ "$AUTOSTART" =~ ^[Yy]$ ]]; then
+    mkdir -p ~/.config/autostart
+    cat > ~/.config/autostart/tangerine.desktop <<AUTO
 [Desktop Entry]
 Name=Tangerine
 Exec=$HOME/Applications/Tangerine.AppImage --no-sandbox
@@ -55,14 +48,11 @@ Terminal=false
 Type=Application
 X-GNOME-Autostart-enabled=true
 AUTO
-
-  echo "✅ Installed to ~/Applications/Tangerine.AppImage"
-  echo "✅ Added to autostart (starts with your desktop session)"
-  echo ""
-  echo "Run now with:"
-  echo "  ~/Applications/Tangerine.AppImage --no-sandbox"
+    echo "✅ Autostart enabled"
+  else
+    rm -f ~/.config/autostart/tangerine.desktop
+    echo "ℹ️  No autostart"
+  fi
 else
-  echo ""
-  echo "Run the AppImage directly:"
-  echo "  chmod +x '$APPIMAGE' && '$APPIMAGE' --no-sandbox"
+  echo "Run: chmod +x '$APPIMAGE' && '$APPIMAGE' --no-sandbox"
 fi
