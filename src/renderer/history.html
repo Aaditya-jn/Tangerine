@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body {
+    font-family: -apple-system, 'Segoe UI', sans-serif;
+    background: #161616; color: #fff; height: 100%;
+  }
+  #header {
+    padding: 14px 16px 10px; font-size: 13px; font-weight: 700;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  #list { padding: 6px 10px; overflow-y: auto; height: calc(100% - 44px); }
+  .h-item {
+    display: flex; align-items: center; gap: 8px; padding: 9px 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.06); cursor: pointer;
+    border-radius: 8px;
+  }
+  .h-item:hover { background: rgba(255,255,255,0.06); }
+  .h-name {
+    font-size: 12px; color: #fff; flex: 1; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .h-fmt { font-size: 10px; color: #FF9A3C; font-weight: 700; }
+  .h-time { font-size: 9px; color: rgba(255,255,255,0.45); min-width: 58px; text-align: right; }
+  #empty { font-size: 12px; color: rgba(255,255,255,0.4); text-align: center; padding: 40px 0; }
+</style>
+</head>
+<body>
+  <div id="header">🕐 Recent conversions</div>
+  <div id="list"><div id="empty">No conversions yet</div></div>
+
+<script>
+  const list = document.getElementById('list');
+
+  function render(items) {
+    list.innerHTML = '';
+    if (!items.length) {
+      list.innerHTML = '<div id="empty">No conversions yet</div>';
+      return;
+    }
+    items.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'h-item';
+      row.title = item.outPath;
+      const ago = Math.round((Date.now() - item.time) / 60000);
+      row.innerHTML = `
+        <span class="h-name">${item.filename}</span>
+        <span class="h-fmt">${item.target.toUpperCase().slice(0, 6)}</span>
+        <span class="h-time">${ago < 1 ? 'just now' : ago + 'm ago'}</span>`;
+      row.onclick = () => window.api.openFile(item.outPath);
+      list.appendChild(row);
+    });
+  }
+
+  window.api.onHistoryUpdate((items) => render(items));
+</script>
+</body>
+</html>

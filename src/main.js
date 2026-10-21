@@ -1,44 +1,102 @@
-const { app, BrowserWindow, ipcMain, ipcRenderer, screen, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, dialog, Tray, Menu, globalShortcut, clipboard, Notification } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const settings = require('./settings');
 const { getOptions, convert } = require('./converter');
 
+// Must match the StartupWMClass in the .desktop file (see build.sh) so the
+// dock/taskbar can match the running window to the pinned launcher icon
+// and show the "app is running" indicator dot.
 app.setName('Tangerine');
 
-let dropWin    = null;
+const HOTKEY = 'CommandOrControl+Space';
+
+let tray       = null;
 let radialWin  = null;
 let settingsWin= null;
+let historyWin = null;
 let history    = [];   // last 10 conversions
 
-// ── Drop zone ──────────────────────────────────────────────────
-function createDropWindow() {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+function notify(title, body) {
+  if (Notification.isSupported()) new Notification({ title, body }).show();
+}
 
-  dropWin = new BrowserWindow({
-    width: 170,
-    height: 270,
-    x: Math.round(width / 2 - 85),
-    y: Math.round(height / 2 - 135),
-    frame: false,
-    alwaysOnTop: true,
-    resizable: false,
-    skipTaskbar: false,
-    transparent: true,
-    focusable: true,
-    icon: path.join(__dirname, '../assets/icon.png'),
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+// ── Selected-file detection ─────────────────────────────────────
+// There is no universal, stable D-Bus API across file managers (Nautilus,
+// Nemo, Thunar, etc.) for "give me the currently selected file" — that
+// doesn't actually exist as a reliable cross-desktop feature, so this
+// doesn't pretend to call one. What *does* work reliably: file managers
+// write a file reference to the clipboard the moment you press Ctrl+C on
+// a file, in one of two standard formats. We read those; if neither is
+// present (nothing was ever copied, or the clipboard holds something
+// else), we fall back to a normal file picker.
+function getSelectedFilePath() {
+  // Format used by Nautilus/GNOME Files and several others:
+  //   "copy\nfile:///home/user/thing.pdf"
+  try {
+    const buf = clipboard.readBuffer('x-special/gnome-copied-files');
+    if (buf && buf.length) {
+      const line = buf.toString('utf8').split('\n').find((l) => l.startsWith('file://'));
+      if (line) {
+        const p = decodeURIComponent(line.replace('file://', '').trim());
+        if (fs.existsSync(p)) return p;
+      }
+    }
+  } catch { /* not present — fine, try the next format */ }
+
+  // Standard freedesktop format (Thunar, Nemo, PCManFM, etc.):
+  //   "file:///home/user/thing.pdf\r\n"
+  try {
+    const buf = clipboard.readBuffer('text/uri-list');
+    if (buf && buf.length) {
+      const line = buf.toString('utf8').split(/\r?\n/).map((l) => l.trim()).find((l) => l.startsWith('file://'));
+      if (line) {
+        const p = decodeURIComponent(line.replace('file://', ''));
+        if (fs.existsSync(p)) return p;
+      }
+    }
+  } catch { /* not present — fall through to plain text / dialog */ }
+
+  // Last resort: maybe a plain path/string was copied.
+  const text = (clipboard.readText() || '').trim();
+  if (text && fs.existsSync(text) && fs.statSync(text).isFile()) return text;
+
+  return null;
+}
+
+// ── Global hotkey ────────────────────────────────────────────────
+function onHotkey() {
+  const cursor = screen.getCursorScreenPoint();
+  const detected = getSelectedFilePath();
+
+  if (detected) {
+    createRadialWindow(cursor.x, cursor.y, detected);
+    return;
+  }
+
+  // Nothing usable on the clipboard — ask the user to pick a file instead
+  // of silently doing nothing.
+  dialog.showOpenDialog({ properties: ['openFile'] }).then((result) => {
+    if (!result.canceled && result.filePaths[0]) {
+      createRadialWindow(cursor.x, cursor.y, result.filePaths[0]);
     }
   });
+}
 
-  dropWin.loadFile(path.join(__dirname, 'renderer', 'drop.html'));
-  dropWin.setAlwaysOnTop(true, 'screen-saver');
-
-  dropWin.on('focus', () => dropWin.blur());
-
-  dropWin.on('closed', () => { dropWin = null; });
+// ── Tray ─────────────────────────────────────────────────────────
+function createTray() {
+  tray = new Tray(path.join(__dirname, '../assets/icon.png'));
+  tray.setToolTip(`Tangerine — select a file, then press ${HOTKEY.replace('CommandOrControl', 'Ctrl')}`);
+  const menu = Menu.buildFromTemplate([
+    { label: 'Tangerine', enabled: false },
+    { label: `Convert selected file (${HOTKEY.replace('CommandOrControl', 'Ctrl')})`, click: onHotkey },
+    { type: 'separator' },
+    { label: 'History', click: () => createHistoryWindow() },
+    { label: 'Settings', click: () => createSettingsWindow() },
+    { type: 'separator' },
+    { label: 'Quit', click: () => app.quit() },
+  ]);
+  tray.setContextMenu(menu);
 }
 
 
@@ -87,56 +145,56 @@ function createSettingsWindow() {
   settingsWin.on('closed', () => { settingsWin = null; });
 }
 
-// ── IPC ────────────────────────────────────────────────────────
-ipcMain.on('file-dropped', (_, { filePath }) => {
-  const cursor = screen.getCursorScreenPoint();
-  createRadialWindow(cursor.x, cursor.y, filePath);
-});
+// ── History window ─────────────────────────────────────────────
+// A real, independently-sized window instead of an inline panel inside the
+// fixed-size drop zone — the inline version's expanded content exceeded the
+// drop window's bounds and was simply clipped off (looked "broken").
+function createHistoryWindow() {
+  if (historyWin) { historyWin.focus(); historyWin.webContents.send('history-update', history); return; }
 
+  historyWin = new BrowserWindow({
+    width: 340, height: 420,
+    title: 'Tangerine — Recent Conversions',
+    resizable: true,
+    webPreferences: {
+      nodeIntegration: false, contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
+    }
+  });
+  historyWin.loadFile(path.join(__dirname, 'renderer', 'history.html'));
+  historyWin.webContents.once('did-finish-load', () => {
+    historyWin.webContents.send('history-update', history);
+  });
+  historyWin.on('closed', () => { historyWin = null; });
+}
+
+// ── IPC ────────────────────────────────────────────────────────
 ipcMain.on('convert', async (_, { filePath, targetFormat }) => {
   if (radialWin) { radialWin.close(); radialWin = null; }
 
   const cfg = settings.load();
   settings.ensureOutputFolder(cfg.outputFolder);
 
-  const sendProgress = (pct) => {
-    if (dropWin) dropWin.webContents.send('convert-progress', { pct });
-  };
-
-  // Signal start
-  sendProgress(0);
+  const filename = path.basename(filePath);
 
   try {
-    const outPath = await convert(filePath, targetFormat, cfg.outputFolder, cfg.imageQuality, sendProgress);
-    sendProgress(100);
+    const outPath = await convert(filePath, targetFormat, cfg.outputFolder, cfg.imageQuality, () => {});
 
-    // History
     history.unshift({
-      filename: path.basename(filePath),
-      target: targetFormat.replace('__','').replace('__',''),
+      filename,
+      target: targetFormat.replace('__', '').replace('__', ''),
       outPath,
       time: Date.now()
     });
     if (history.length > 10) history.pop();
 
-    if (dropWin) {
-      dropWin.webContents.send('convert-result', { success: true, outPath });
-      dropWin.webContents.send('history-update', history);
-    }
-
+    if (historyWin) historyWin.webContents.send('history-update', history);
+    notify('✓ Converted', `${filename} → ${path.basename(outPath)}`);
     if (cfg.autoOpen) shell.openPath(outPath);
 
   } catch (err) {
-    sendProgress(-1);
-    if (dropWin) dropWin.webContents.send('convert-result', { success: false, error: err.message });
+    notify('✗ Conversion failed', `${filename}: ${err.message}`);
   }
-});
-
-// IPC drag: renderer sends mouse deltas, we move the window
-ipcMain.on('drag-move', (_, { dx, dy }) => {
-  if (!dropWin) return;
-  const [x, y] = dropWin.getPosition();
-  dropWin.setPosition(x + dx, y + dy);
 });
 
 ipcMain.on('close-radial', () => {
@@ -144,6 +202,7 @@ ipcMain.on('close-radial', () => {
 });
 
 ipcMain.on('open-settings', () => createSettingsWindow());
+ipcMain.on('open-history', () => createHistoryWindow());
 
 ipcMain.on('open-file', (_, { filePath }) => shell.openPath(filePath));
 
@@ -160,5 +219,21 @@ ipcMain.handle('pick-folder', async () => {
 });
 
 // ── App lifecycle ──────────────────────────────────────────────
-app.whenReady().then(createDropWindow);
-app.on('window-all-closed', () => app.quit());
+app.whenReady().then(() => {
+  createTray();
+
+  const ok = globalShortcut.register(HOTKEY, onHotkey);
+  if (!ok) {
+    // Most likely cause: another app already owns Ctrl+Space (common with
+    // some input-method switchers). Tray menu still works as a fallback.
+    notify('Tangerine', `Couldn't register ${HOTKEY.replace('CommandOrControl', 'Ctrl')} — it may be taken by another app. Use the tray icon instead.`);
+  }
+});
+
+app.on('will-quit', () => globalShortcut.unregisterAll());
+
+// This is now a background/tray app, not a window-based one. Electron's
+// default is to quit once every window closes (on Linux/Windows); simply
+// having a listener here — even an empty one — suppresses that, so closing
+// Settings/History doesn't take the whole app down with it.
+app.on('window-all-closed', () => {});
