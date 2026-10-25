@@ -303,4 +303,20 @@ async function convert(filePath, targetFormat, outputFolder, quality, onProgress
   return outPath;
 }
 
-module.exports = { getOptions, convert, IMAGES, VIDEOS, AUDIO, DOCS, ARCHIVES };
+// Real PDF merge (was previously a stub that just threw an error).
+// Ghostscript concatenates PDFs reliably without needing any extra library.
+async function mergePdfs(firstPath, extraPaths, outputFolder) {
+  const base = path.basename(firstPath, path.extname(firstPath));
+  const outPath = path.join(outputFolder, `${base}_merged.pdf`);
+  const inputs = [firstPath, ...extraPaths];
+
+  await run('gs', [
+    '-q', '-dBATCH', '-dNOPAUSE', '-sDEVICE=pdfwrite',
+    `-sOutputFile=${outPath}`,
+    ...inputs,
+  ]);
+
+  return outPath;
+}
+
+module.exports = { getOptions, convert, mergePdfs, IMAGES, VIDEOS, AUDIO, DOCS, ARCHIVES };
