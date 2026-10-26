@@ -29,8 +29,25 @@ let settingsWin= null;
 let historyWin = null;
 let history    = [];   // last 10 conversions
 
-function notify(title, body) {
-  if (Notification.isSupported()) new Notification({ title, body }).show();
+// Some conversions produce a single file (showItemInFolder highlights it in
+// the file manager); others produce a folder of pages (pdf→img, split,
+// extract) where there's nothing to highlight — just open that folder.
+function revealOutput(p) {
+  try {
+    if (fs.statSync(p).isDirectory()) shell.openPath(p);
+    else shell.showItemInFolder(p);
+  } catch { /* path no longer exists — nothing to reveal */ }
+}
+
+// `revealPath` is optional: when given, clicking the notification locates
+// the output (see revealOutput above), so you don't have to go hunting for
+// where a conversion landed — this is the main fix for "we don't know
+// where converted files are".
+function notify(title, body, revealPath) {
+  if (!Notification.isSupported()) return;
+  const n = new Notification({ title, body });
+  if (revealPath) n.on('click', () => revealOutput(revealPath));
+  n.show();
 }
 
 // ── Selected-file detection ─────────────────────────────────────
@@ -121,6 +138,7 @@ function createRadialWindow(x, y, filePath) {
   if (radialWin) { radialWin.close(); radialWin = null; }
 
   const opts    = getOptions(path.extname(filePath).toLowerCase().replace('.', ''));
+  const theme   = settings.load().radialTheme;
   const winSize = 520;
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
   const wx = Math.min(Math.max(x - winSize / 2, 0), sw - winSize);
@@ -138,7 +156,7 @@ function createRadialWindow(x, y, filePath) {
 
   radialWin.loadFile(path.join(__dirname, 'renderer', 'radial.html'));
   radialWin.once('ready-to-show', () => {
-    radialWin.webContents.send('init-radial', { filePath, options: opts.slice(0, 22) });
+    radialWin.webContents.send('init-radial', { filePath, options: opts.slice(0, 22), theme });
   });
   radialWin.on('blur',   () => { if (radialWin) { radialWin.close(); radialWin = null; } });
   radialWin.on('closed', () => { radialWin = null; });
@@ -208,7 +226,7 @@ ipcMain.on('convert', async (_, { filePath, targetFormat }) => {
       history.unshift({ filename, target: 'merge', outPath, time: Date.now() });
       if (history.length > 10) history.pop();
       if (historyWin) historyWin.webContents.send('history-update', history);
-      notify('✓ Merged', `${result.filePaths.length + 1} PDFs → ${path.basename(outPath)}`);
+      notify('✓ Merged — click to locate', `${result.filePaths.length + 1} PDFs → ${path.basename(outPath)}\nSaved in ${path.dirname(outPath)}`, outPath);
       if (cfg.autoOpen) shell.openPath(outPath);
     } catch (err) {
       notify('✗ Merge failed', err.message);
@@ -228,7 +246,11 @@ ipcMain.on('convert', async (_, { filePath, targetFormat }) => {
     if (history.length > 10) history.pop();
 
     if (historyWin) historyWin.webContents.send('history-update', history);
-    notify('✓ Converted', `${filename} → ${path.basename(outPath)}`);
+    notify(
+      '✓ Converted — click to locate',
+      `${filename} → ${path.basename(outPath)}\nSaved in ${path.dirname(outPath)}`,
+      outPath
+    );
     if (cfg.autoOpen) shell.openPath(outPath);
 
   } catch (err) {
@@ -244,6 +266,7 @@ ipcMain.on('open-settings', () => createSettingsWindow());
 ipcMain.on('open-history', () => createHistoryWindow());
 
 ipcMain.on('open-file', (_, { filePath }) => shell.openPath(filePath));
+ipcMain.on('reveal-file', (_, { filePath }) => revealOutput(filePath));
 
 ipcMain.handle('get-settings', () => settings.load());
 

@@ -69,6 +69,16 @@ input[type=range]::-webkit-slider-thumb {
 }
 .theme-opt.active { border-color:#FF6B00; color:#FF9A3C; background:rgba(255,107,0,0.1); }
 
+/* Radial color pickers */
+.color-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.color-row label { font-size:11px; color:#ccc; }
+input[type=color] {
+  width:30px; height:22px; border:1px solid #444; border-radius:5px;
+  background:none; padding:0; cursor:pointer;
+}
+#reset-theme-btn { font-size:10px; color:#888; background:none; border:none; cursor:pointer; text-decoration:underline; }
+#reset-theme-btn:hover { color:#FF9A3C; }
+
 /* Save btn */
 #save-btn {
   width:100%; padding:10px; background:linear-gradient(135deg,#FF6B00,#FF9A3C);
@@ -124,11 +134,34 @@ input[type=range]::-webkit-slider-thumb {
   </div>
 </div>
 
+<div class="section">
+  <div class="section-title">Radial Menu Colors</div>
+  <div class="color-row"><label>Images</label><input type="color" id="rc-image"></div>
+  <div class="color-row"><label>Video</label><input type="color" id="rc-video"></div>
+  <div class="color-row"><label>Audio</label><input type="color" id="rc-audio"></div>
+  <div class="color-row"><label>Documents</label><input type="color" id="rc-doc"></div>
+  <div class="color-row"><label>Archives</label><input type="color" id="rc-archive"></div>
+  <div class="color-row"><label>Tools</label><input type="color" id="rc-tool"></div>
+  <div class="color-row"><label>Center button</label><input type="color" id="rc-centerBg"></div>
+  <div class="row" style="margin-top:6px"><span></span><button id="reset-theme-btn">Reset to default colors</button></div>
+</div>
+
 <button id="save-btn">Save Settings</button>
 <div id="saved-msg">✓ Settings saved!</div>
 
 <script>
 let cfg = {};
+
+const DEFAULT_RADIAL_THEME = {
+  image: '#FF6B35', video: '#7C3AED', audio: '#059669',
+  doc: '#1D4ED8', archive: '#B45309', tool: '#BE185D', centerBg: '#121212',
+};
+
+function applyRadialTheme(t) {
+  Object.keys(DEFAULT_RADIAL_THEME).forEach(key => {
+    document.getElementById('rc-' + key).value = t[key] || DEFAULT_RADIAL_THEME[key];
+  });
+}
 
 async function init() {
   cfg = await window.api.getSettings();
@@ -137,7 +170,10 @@ async function init() {
   document.getElementById('quality').value        = cfg.imageQuality || 75;
   document.getElementById('quality-val').textContent = cfg.imageQuality || 75;
   setTheme(cfg.theme || 'auto');
+  applyRadialTheme({ ...DEFAULT_RADIAL_THEME, ...(cfg.radialTheme || {}) });
 }
+
+document.getElementById('reset-theme-btn').addEventListener('click', () => applyRadialTheme(DEFAULT_RADIAL_THEME));
 
 document.getElementById('quality').addEventListener('input', e => {
   document.getElementById('quality-val').textContent = e.target.value;
@@ -166,6 +202,9 @@ document.getElementById('save-btn').addEventListener('click', async () => {
     autoOpen:     document.getElementById('auto-open').checked,
     imageQuality: parseInt(document.getElementById('quality').value),
     theme:        getActiveTheme(),
+    radialTheme:  Object.fromEntries(
+      Object.keys(DEFAULT_RADIAL_THEME).map(key => [key, document.getElementById('rc-' + key).value])
+    ),
   };
   await window.api.saveSettings(newCfg);
   const msg = document.getElementById('saved-msg');

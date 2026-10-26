@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   openSettings:    ()         => ipcRenderer.send('open-settings'),
   openHistory:     ()         => ipcRenderer.send('open-history'),
   openFile:        (fp)       => ipcRenderer.send('open-file', { filePath: fp }),
+  revealFile:      (fp)       => ipcRenderer.send('reveal-file', { filePath: fp }),
   onHistoryUpdate: (cb) => ipcRenderer.on('history-update', (_, d) => cb(d)),
   getSettings:     ()    => ipcRenderer.invoke('get-settings'),
   saveSettings:    (s)   => ipcRenderer.invoke('save-settings', s),

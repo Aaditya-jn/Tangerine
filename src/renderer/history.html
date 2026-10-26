@@ -25,6 +25,11 @@
   }
   .h-fmt { font-size: 10px; color: #FF9A3C; font-weight: 700; }
   .h-time { font-size: 9px; color: rgba(255,255,255,0.45); min-width: 58px; text-align: right; }
+  .h-locate {
+    font-size: 13px; opacity: 0.55; padding: 2px 4px; border-radius: 5px;
+    flex-shrink: 0;
+  }
+  .h-locate:hover { opacity: 1; background: rgba(255,255,255,0.1); }
   #empty { font-size: 12px; color: rgba(255,255,255,0.4); text-align: center; padding: 40px 0; }
 </style>
 </head>
@@ -49,8 +54,13 @@
       row.innerHTML = `
         <span class="h-name">${item.filename}</span>
         <span class="h-fmt">${item.target.toUpperCase().slice(0, 6)}</span>
-        <span class="h-time">${ago < 1 ? 'just now' : ago + 'm ago'}</span>`;
+        <span class="h-time">${ago < 1 ? 'just now' : ago + 'm ago'}</span>
+        <span class="h-locate" title="Show in folder">📁</span>`;
       row.onclick = () => window.api.openFile(item.outPath);
+      row.querySelector('.h-locate').onclick = (e) => {
+        e.stopPropagation();
+        window.api.revealFile(item.outPath);
+      };
       list.appendChild(row);
     });
   }

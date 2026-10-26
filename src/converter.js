@@ -190,11 +190,22 @@ async function convert(filePath, targetFormat, outputFolder, quality, onProgress
   }
 
   if (targetFormat === '__pdf2docx__') {
-    outPath = fp(base, 'docx');
-    // libreoffice converts pdf→docx reasonably well
-    await run('libreoffice', ['--headless', '--convert-to', 'docx', '--outdir', outputFolder, filePath], {
-      onProgress: p => onProgress(p)
+    // A direct `libreoffice --convert-to docx` on a PDF fails every time
+    // with "no export filter ... found, aborting" — LibreOffice imports a
+    // PDF as a Draw (graphics) document, and Draw has no export path to
+    // .docx (a Writer-only format). Confirmed by reproducing the exact
+    // error before writing this fix. The actual working path: extract the
+    // text with pdftotext, then let LibreOffice convert that .txt to
+    // .docx (a real, valid Writer→Writer filter). This loses the PDF's
+    // original visual layout but produces a genuinely working, editable
+    // Word document instead of silently failing.
+    const txtPath = fp(`${base}_extracted`, 'txt');
+    await run('pdftotext', [filePath, txtPath], { onProgress: p => onProgress(p * 0.4) });
+    await run('libreoffice', ['--headless', '--convert-to', 'docx', '--outdir', outputFolder, txtPath], {
+      onProgress: p => onProgress(40 + p * 0.6)
     });
+    outPath = fp(`${base}_extracted`, 'docx');
+    try { fs.unlinkSync(txtPath); } catch { /* harmless if cleanup fails */ }
     return outPath;
   }
 
@@ -286,7 +297,24 @@ async function convert(filePath, targetFormat, outputFolder, quality, onProgress
 
   if (IMAGES.includes(ext)) {
     await run('convert', [filePath, outPath], { onProgress: p => onProgress(p) });
-  } else if (VIDEOS.includes(ext) || AUDIO.includes(ext)) {
+  } else if (VIDEOS.includes(ext)) {
+    // Containers like mp4/mov/m4v/mkv can usually hold the exact same
+    // H.264+AAC streams, so a straight repackage (stream copy) is correct
+    // and takes under a second — versus a full re-encode which can take
+    // 30-40+ seconds for no quality or compatibility benefit. Try the fast
+    // remux first; if the codecs genuinely aren't compatible with the
+    // target container, ffmpeg exits non-zero and we fall back to a real
+    // re-encode automatically.
+    try {
+      await run('ffmpeg', ['-y', '-i', filePath, '-c', 'copy', outPath], {
+        onProgress, parseProgress: ffmpegProgress
+      });
+    } catch (remuxErr) {
+      await run('ffmpeg', ['-y', '-i', filePath, outPath], {
+        onProgress, parseProgress: ffmpegProgress
+      });
+    }
+  } else if (AUDIO.includes(ext)) {
     await run('ffmpeg', ['-y', '-i', filePath, outPath], {
       onProgress, parseProgress: ffmpegProgress
     });

@@ -6,11 +6,22 @@ const CONFIG_DIR  = path.join(os.homedir(), '.config', 'tangerine');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'settings.json');
 const DEFAULT_OUT = path.join(os.homedir(), 'Desktop');
 
+const DEFAULT_RADIAL_THEME = {
+  image:    '#FF6B35',
+  video:    '#7C3AED',
+  audio:    '#059669',
+  doc:      '#1D4ED8',
+  archive:  '#B45309',
+  tool:     '#BE185D',
+  centerBg: '#121212',
+};
+
 const DEFAULTS = {
   outputFolder: DEFAULT_OUT,
   imageQuality: 75,
   autoOpen: false,
-  theme: 'auto'   // 'auto' | 'light' | 'dark'
+  theme: 'auto',   // 'auto' | 'light' | 'dark'
+  radialTheme: DEFAULT_RADIAL_THEME,
 };
 
 function load() {
