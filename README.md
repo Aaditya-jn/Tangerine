@@ -4,6 +4,16 @@
 
 A background Linux utility, built with Electron. No window sitting on your desktop, no drag-and-drop — just a tray icon and a global hotkey. Converts images, videos, audio, PDFs, documents and archives, all locally, no cloud, no upload.
 
+
+## Demo
+
+Here's Tangerine in action — from selecting a file to converting it through the radial menu.
+
+
+https://github.com/user-attachments/assets/17c43d46-4974-4ef3-8356-854bf83c4a43
+
+
+
 ---
 
 ## ✨ Features
