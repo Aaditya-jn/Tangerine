@@ -25,44 +25,42 @@ svg { position:absolute; inset:0; width:520px; height:520px; }
   to   { opacity:1; transform:scale(1); }
 }
 #svg { animation: menuIn 0.22s cubic-bezier(0.16,1,0.3,1) both; transform-origin: 260px 260px; }
-#center { animation: menuIn 0.22s cubic-bezier(0.16,1,0.3,1) both; }
+@keyframes centerFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 
+/* ONE circle, one element — the previous version split the emoji and the
+   filename/cancel text into two separate positioned elements, and they
+   ended up rendering as two distinct overlapping dark circles instead of
+   one. Back to a single div with flex centering, which reliably centers
+   its content as a block with no second shape to misalign against. */
 #center {
   position:absolute; top:50%; left:50%;
   transform:translate(-50%,-50%);
   width:100px; height:100px; border-radius:50%;
   background:rgba(18,18,18,0.92);
   border:1px solid rgba(255,255,255,0.1);
-  cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:2px; cursor:pointer; padding:10px;
   box-shadow:0 8px 28px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
   pointer-events:all; color:#fff; text-align:center;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+  animation: centerFadeIn 0.22s ease-out both;
 }
 #center:hover {
   transform: translate(-50%,-50%) scale(1.06);
   box-shadow: 0 10px 34px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.1);
 }
-/* The emoji is now the ONLY thing sharing space inside the circle, so
-   centering it is trivial and exact — no glyph-metrics guesswork needed.
-   The old version stacked three lines (emoji + filename + cancel) in a
-   centered flex column, which centers the whole 3-line block, not the
-   emoji itself — that's what actually made it look off-center. */
 #center .emoji {
-  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  font-size:26px; line-height:1;
+  font-size:22px; line-height:1;
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
 }
-/* Filename + cancel now live below the circle as their own label,
-   instead of competing with the emoji for vertical space inside it. */
-#center-label {
-  position:absolute; top:calc(50% + 62px); left:50%; transform:translateX(-50%);
-  width:140px; text-align:center; pointer-events:none;
-}
-#center-label .fname {
+#center .fname {
   font-size:8px; color:rgba(255,255,255,0.65); overflow:hidden;
-  text-overflow:ellipsis; white-space:nowrap;
+  text-overflow:ellipsis; white-space:nowrap; max-width:78px;
 }
-#center-label .cancel { font-size:10px; color:rgba(255,255,255,0.45); letter-spacing:0.3px; margin-top:2px; }
+#center .cancel { font-size:10px; color:rgba(255,255,255,0.45); letter-spacing:0.3px; }
 
 /* A small, isolated drag handle — same principle as the earlier drop-zone
    fix: drag capability lives on ONE dedicated element only, never on the
@@ -113,8 +111,6 @@ svg { position:absolute; inset:0; width:520px; height:520px; }
 <div id="handle" title="Drag to move">⠿</div>
 <div id="center">
   <div class="emoji">🍊</div>
-</div>
-<div id="center-label">
   <div class="fname" id="fname"></div>
   <div class="cancel">✕ cancel</div>
 </div>

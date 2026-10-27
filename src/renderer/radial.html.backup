@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body {
+  width:520px; height:520px; background:transparent;
+  overflow:hidden; font-family:-apple-system,'Segoe UI',sans-serif;
+  user-select:none;
+  /* No -webkit-app-region: drag here on purpose. This menu is transient —
+     it opens at your cursor and closes on one click/Escape — so dragging
+     it has little value, and on Wayland, CSS app-region drag/no-drag
+     overrides on nested SVG elements aren't reliably respected: the whole
+     window can end up treated as "grab to move" instead of delivering
+     clicks to individual segments, which is exactly the bug this was
+     causing. Simplest fix: make the whole menu non-draggable, period. */
+}
+svg { position:absolute; inset:0; width:520px; height:520px; }
+
+/* Entrance: the whole menu scales/fades in rather than just appearing —
+   this one change does more for "feels premium" than any color choice. */
+@keyframes menuIn {
+  from { opacity:0; transform:scale(0.82); }
+  to   { opacity:1; transform:scale(1); }
+}
+#svg { animation: menuIn 0.22s cubic-bezier(0.16,1,0.3,1) both; transform-origin: 260px 260px; }
+#center { animation: menuIn 0.22s cubic-bezier(0.16,1,0.3,1) both; }
+
+/* ONE circle, one element — the previous version split the emoji and the
+   filename/cancel text into two separate positioned elements, and they
+   ended up rendering as two distinct overlapping dark circles instead of
+   one. Back to a single div with flex centering, which reliably centers
+   its content as a block with no second shape to misalign against. */
+#center {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  width:100px; height:100px; border-radius:50%;
+  background:rgba(18,18,18,0.92);
+  border:1px solid rgba(255,255,255,0.1);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:2px; cursor:pointer; padding:10px;
+  box-shadow:0 8px 28px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+  pointer-events:all; color:#fff; text-align:center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+#center:hover {
+  transform: translate(-50%,-50%) scale(1.06);
+  box-shadow: 0 10px 34px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+#center .emoji {
+  font-size:22px; line-height:1;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+}
+#center .fname {
+  font-size:8px; color:rgba(255,255,255,0.65); overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; max-width:78px;
+}
+#center .cancel { font-size:10px; color:rgba(255,255,255,0.45); letter-spacing:0.3px; }
+
+/* A small, isolated drag handle — same principle as the earlier drop-zone
+   fix: drag capability lives on ONE dedicated element only, never on the
+   ring or background. That's what keeps clicking reliable while still
+   letting you reposition the menu if it opens somewhere inconvenient. */
+#handle {
+  position:absolute; top:6px; left:50%; transform:translateX(-50%);
+  width:44px; height:18px; border-radius:9px;
+  background:rgba(0,0,0,0.5); color:rgba(255,255,255,0.75);
+  display:flex; align-items:center; justify-content:center;
+  font-size:11px; letter-spacing:1px; cursor:move;
+  -webkit-app-region: drag;
+}
+
+#tooltip {
+  position:fixed; bottom:18px; left:50%; transform:translateX(-50%) translateY(4px);
+  background:rgba(15,15,15,0.88); backdrop-filter:blur(6px);
+  color:#fff; font-size:11px; font-weight:600; letter-spacing:0.2px;
+  padding:7px 14px; border-radius:10px; border:1px solid rgba(255,255,255,0.08);
+  pointer-events:none; opacity:0; transition:opacity 0.18s ease, transform 0.18s ease;
+  white-space:nowrap; box-shadow:0 4px 16px rgba(0,0,0,0.4);
+}
+#tooltip.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<svg id="svg" viewBox="0 0 520 520">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0,0,0,0.45)"/>
+    </filter>
+    <filter id="ambientBlur" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+  </defs>
+  <!-- Soft ambient glow behind the ring — color follows the user's own
+       "image" theme color so it still feels tied to their chosen palette
+       rather than a fixed brand color. -->
+  <circle id="ambient" cx="260" cy="260" r="200" fill="#FF6B35" opacity="0.10" filter="url(#ambientBlur)"/>
+  <g id="gradientDefs"></g>
+  <g id="segs"></g>
+</svg>
+
+<div id="handle" title="Drag to move">⠿</div>
+<div id="center">
+  <div class="emoji">🍊</div>
+  <div class="fname" id="fname"></div>
+  <div class="cancel">✕ cancel</div>
+</div>
+<div id="tooltip"></div>
+
+<script>
+const CX=260, CY=260, INNER=82, OUTER=228, GAP=2.8;
+
+const DEFAULT_THEME = {
+  image: '#FF6B35', video: '#7C3AED', audio: '#059669',
+  doc: '#1D4ED8', archive: '#B45309', tool: '#BE185D',
+  centerBg: '#121212',
+};
+
+// Each category gets a base color (customizable in Settings → Appearance);
+// the ring's shade variety within a category is generated from that one
+// base rather than hand-picked, so a custom color still looks layered.
+function paletteFrom(base) {
+  return [0, 0.14, 0.28, 0.42, 0.56, 0.7].map(amt => lighten(base, amt));
+}
+
+const ICONS = { image:'🖼️', video:'🎬', audio:'🎵', doc:'📄', archive:'🗜️', tool:'⚙️' };
+
+// Several very different actions are all tagged group:'tool' in converter.js
+// (compress, split, merge, and even PDF→JPG/PNG), so they all showed the same
+// generic gear icon — that's what made the menu look disorganized/hard to
+// tell apart. This overrides by the option's actual value for a specific,
+// recognizable icon per action; anything not listed here still falls back
+// to its group icon above.
+const VALUE_ICONS = {
+  '__pdf2img_jpg__': '🖼️', '__pdf2img__': '🖼️',       // PDF → image page(s)
+  '__pdfcompress__': '🗜️', '__compress__': '🗜️',       // shrink
+  '__pdfmerge__': '🔗',                                  // combine files
+  '__pdfsplit__': '✂️',                                  // split into pieces
+  '__resize50__': '📐', '__resize25__': '📐',            // resize
+  '__gray__': '◐',                                       // grayscale
+  '__rotate90__': '🔄',                                  // rotate
+  '__extractaudio__': '🎵', '__trim__': '✂️',            // audio/video tools
+  '__extract__': '📦',                                   // archive extract
+};
+
+let COLORS = buildColors(DEFAULT_THEME);
+function buildColors(theme) {
+  return {
+    image:   paletteFrom(theme.image),
+    video:   paletteFrom(theme.video),
+    audio:   paletteFrom(theme.audio),
+    doc:     paletteFrom(theme.doc),
+    archive: paletteFrom(theme.archive),
+    tool:    paletteFrom(theme.tool),
+  };
+}
+
+const LABELS = {
+  '__compress__':     'Compress image',
+  '__resize50__':     'Resize to 50%',
+  '__resize25__':     'Resize to 25%',
+  '__gray__':         'Grayscale',
+  '__rotate90__':     'Rotate 90°',
+  '__extractaudio__': 'Extract as MP3',
+  '__trim__':         'Trim first 30s',
+  '__pdf2img__':      'Pages → PNG',
+  '__pdf2img_jpg__':  'Pages → JPG',
+  '__pdf2docx__':     'Convert to Word',
+  '__pdf2txt__':      'Extract text',
+  '__pdfcompress__':  'Compress PDF',
+  '__pdfmerge__':     'Merge PDFs',
+  '__pdfsplit__':     'Split pages',
+  '__extract__':      'Extract here',
+  '__repack_zip__':   'Repack → ZIP',
+  '__repack_targz__': 'Repack → TAR.GZ',
+  '__repack_7z__':    'Repack → 7Z',
+};
+
+function polar(cx,cy,r,deg) {
+  const rad = (deg-90)*Math.PI/180;
+  return { x: cx+r*Math.cos(rad), y: cy+r*Math.sin(rad) };
+}
+
+function arc(cx,cy,ri,ro,s,e) {
+  const p1=polar(cx,cy,ro,s), p2=polar(cx,cy,ro,e);
+  const p3=polar(cx,cy,ri,e), p4=polar(cx,cy,ri,s);
+  const lg=(e-s)>180?1:0;
+  return `M${p1.x} ${p1.y} A${ro} ${ro} 0 ${lg} 1 ${p2.x} ${p2.y}
+          L${p3.x} ${p3.y} A${ri} ${ri} 0 ${lg} 0 ${p4.x} ${p4.y} Z`;
+}
+
+function lighten(hex, amt=0.25) {
+  const r=parseInt(hex.slice(1,3),16);
+  const g=parseInt(hex.slice(3,5),16);
+  const b=parseInt(hex.slice(5,7),16);
+  const m=c=>Math.min(255,Math.round(c+(255-c)*amt)).toString(16).padStart(2,'0');
+  return '#'+m(r)+m(g)+m(b);
+}
+
+let filePath='', options=[];
+const tooltip = document.getElementById('tooltip');
+
+function render() {
+  const n=options.length; if(!n) return;
+  const sweep=(360/n)-GAP;
+  const g=document.getElementById('segs');
+  const defs=document.getElementById('gradientDefs');
+  g.innerHTML=''; defs.innerHTML='';
+
+  options.forEach((opt,i) => {
+    const s = i*(360/n)+GAP/2;
+    const e = s+sweep;
+    const mid = s+sweep/2;
+    const pal  = COLORS[opt.group] || COLORS.tool;
+    const base = pal[i%pal.length];
+    const d    = arc(CX,CY,INNER,OUTER,s,e);
+
+    // A subtle gradient (slightly lighter edge → base) on top of your
+    // chosen palette shade reads as "designed" rather than a flat fill,
+    // without fighting the custom colors you picked in Settings.
+    const gradId = `grad${i}`;
+    const lg = document.createElementNS('http://www.w3.org/2000/svg','linearGradient');
+    lg.setAttribute('id', gradId);
+    lg.setAttribute('x1','0%'); lg.setAttribute('y1','0%');
+    lg.setAttribute('x2','100%'); lg.setAttribute('y2','100%');
+    lg.innerHTML = `<stop offset="0%" stop-color="${lighten(base,0.12)}"/><stop offset="100%" stop-color="${base}"/>`;
+    defs.appendChild(lg);
+
+    const seg = document.createElementNS('http://www.w3.org/2000/svg','g');
+    seg.style.transition = 'transform 0.15s cubic-bezier(0.34,1.56,0.64,1), filter 0.15s ease';
+    seg.style.cursor = 'pointer';
+
+    const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.setAttribute('d',d);
+    p.setAttribute('fill',`url(#${gradId})`);
+    p.setAttribute('stroke','rgba(0,0,0,0.18)');
+    p.setAttribute('stroke-width','1');
+    p.setAttribute('stroke-linejoin','round');
+    p.style.filter='url(#shadow)';
+
+    const lr = (INNER+OUTER)/2;
+    const lp = polar(CX,CY,lr,mid);
+    const displayLabel = LABELS[opt.value] || opt.label;
+    const shortLabel   = opt.label;
+    const icon = VALUE_ICONS[opt.value] || ICONS[opt.group] || '';
+    const fontSize = n>16 ? 8.5 : n>12 ? 9.5 : 11;
+
+    // Icon above label — a quick visual cue for what kind of action a
+    // segment is, on top of the text, same pattern used elsewhere (History
+    // rows have a folder icon, etc.).
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x',lp.x); t.setAttribute('y',lp.y - 2);
+    t.setAttribute('text-anchor','middle');
+    t.setAttribute('fill','#fff');
+    t.setAttribute('font-size', fontSize + 3);
+    t.setAttribute('pointer-events','none');
+    t.textContent = icon;
+
+    const t2 = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t2.setAttribute('x',lp.x); t2.setAttribute('y',lp.y + 12);
+    t2.setAttribute('text-anchor','middle');
+    t2.setAttribute('fill','#fff');
+    t2.setAttribute('font-size', fontSize);
+    t2.setAttribute('font-weight','700');
+    t2.setAttribute('font-family','-apple-system,Segoe UI,sans-serif');
+    t2.setAttribute('letter-spacing','0.2px');
+    t2.setAttribute('pointer-events','none');
+    t2.textContent = shortLabel;
+
+    seg.appendChild(p); seg.appendChild(t); seg.appendChild(t2);
+
+    // Hover: push the segment outward along its own angle (not a flat
+    // color swap) — the "lift toward you" feel a real app dock has.
+    const rad = (mid-90)*Math.PI/180;
+    const pushX = Math.cos(rad)*7, pushY = Math.sin(rad)*7;
+
+    seg.addEventListener('mouseenter', () => {
+      seg.setAttribute('transform', `translate(${pushX} ${pushY})`);
+      seg.style.filter = 'brightness(1.12)';
+      tooltip.textContent = displayLabel;
+      tooltip.classList.add('show');
+    });
+    seg.addEventListener('mouseleave', () => {
+      seg.setAttribute('transform', '');
+      seg.style.filter = '';
+      tooltip.classList.remove('show');
+    });
+    seg.addEventListener('click', () => {
+      window.api.sendConvert(filePath, opt.value);
+    });
+
+    g.appendChild(seg);
+  });
+
+  document.getElementById('fname').textContent = filePath.split('/').pop();
+}
+
+window.api.onInitRadial(({ filePath:fp, options:opts, theme }) => {
+  filePath=fp; options=opts;
+  const t = { ...DEFAULT_THEME, ...(theme || {}) };
+  COLORS = buildColors(t);
+  document.getElementById('center').style.background = hexToRgba(t.centerBg, 0.92);
+  document.getElementById('ambient').setAttribute('fill', t.image);
+  render();
+});
+
+function hexToRgba(hex, alpha) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+document.getElementById('center').addEventListener('click', () => window.api.sendCloseRadial());
+</script>
+</body>
+</html>
