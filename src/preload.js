@@ -3,6 +3,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   // Radial menu
   sendConvert:     (fp, fmt)  => ipcRenderer.send('convert', { filePath: fp, targetFormat: fmt }),
+  openTool:        (fp, action) => ipcRenderer.send('open-tool', { filePath: fp, action }),
+  closeTool:       () => ipcRenderer.send('close-tool'),
+  applyTool:       (payload) => ipcRenderer.send('apply-tool', payload),
+  onInitTool:      (cb) => ipcRenderer.on('init-tool', (_, d) => cb(d)),
+  onToolProgress:  (cb) => ipcRenderer.on('tool-progress', (_, p) => cb(p)),
+  onToolError:     (cb) => ipcRenderer.on('tool-error', (_, message) => cb(message)),
   sendCloseRadial: ()         => ipcRenderer.send('close-radial'),
   onInitRadial:    (cb) => ipcRenderer.on('init-radial', (_, d) => cb(d)),
 

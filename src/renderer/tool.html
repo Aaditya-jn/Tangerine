@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tangerine Tools</title>
+<style>
+:root {
+  --ink: #28201f; --muted: #796c67; --paper: #fff8f1; --panel: #fffdf9;
+  --line: #ead7cb; --orange: #f45a2a; --orange-dark: #d7461c; --peach: #f9e2d4;
+}
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: radial-gradient(circle at 8% 12%, rgba(255,102,62,.25), transparent 36%),
+              radial-gradient(circle at 92% 4%, rgba(255,194,65,.26), transparent 34%),
+              linear-gradient(135deg, #362421, #1f2028 64%, #29223a);
+  padding: 17px;
+}
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+.window {
+  width: 100%; height: 100%; display: flex; flex-direction: column;
+  border: 1px solid rgba(255,255,255,.18); border-radius: 20px; overflow: hidden;
+  background: rgba(255,248,241,.97); box-shadow: 0 24px 75px rgba(0,0,0,.36);
+}
+.header { display:flex; align-items:center; gap:13px; padding:17px 21px 14px; border-bottom:1px solid var(--line); -webkit-app-region:drag; }
+.brand {
+  width:38px; height:38px; flex:none; display:grid; place-items:center; font-size:22px;
+  border-radius:12px; background:linear-gradient(145deg,#ffbf52,#f45a2a); box-shadow:inset 0 1px 0 #ffffff8c;
+}
+.headcopy { min-width:0; flex:1; }
+.kicker { font-size:10px; text-transform:uppercase; color:var(--orange-dark); font-weight:800; letter-spacing:1.4px; }
+h1 { font-size:21px; line-height:1.18; margin:3px 0 4px; letter-spacing:-.5px; }
+.filename { color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.close {
+  -webkit-app-region:no-drag; border:0; background:#f2e5dc; color:#6b5146; width:31px; height:31px; border-radius:50%; font-size:18px;
+}
+.close:hover { background:#ead1c3; }
+.content { flex:1; overflow:auto; padding:17px 20px 14px; min-height:0; }
+.panel { height:100%; min-height:0; display:flex; flex-direction:column; gap:14px; }
+.hidden { display:none !important; }
+.intro { color:var(--muted); font-size:12px; margin:0; line-height:1.5; }
+.section-label { font-size:10px; color:#806f67; font-weight:800; letter-spacing:1.1px; text-transform:uppercase; margin-bottom:8px; }
+.stage {
+  position:relative; flex:none; height:330px; width:100%; display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(145deg,#302d31,#1e2025); border:1px solid #36343a; border-radius:13px; overflow:hidden;
+  touch-action:none;
+}
+.stage img { max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; display:block; user-select:none; pointer-events:none; }
+.crop-selection {
+  position:absolute; border:2px solid #ff713b; background:rgba(255,130,72,.10);
+  box-shadow:0 0 0 1000px rgba(0,0,0,.48); cursor:move; min-width:5px; min-height:5px; touch-action:none;
+}
+.crop-selection::before { content:""; position:absolute; inset:0; border:1px dashed rgba(255,255,255,.72); pointer-events:none; }
+.crop-handle { position:absolute; right:-6px; bottom:-6px; width:13px; height:13px; border-radius:3px; background:#fff; border:2px solid var(--orange); cursor:nwse-resize; }
+.stage-hint { position:absolute; top:10px; left:10px; color:white; background:#0009; padding:6px 9px; border-radius:7px; font-size:10px; pointer-events:none; }
+.controls-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.field { min-width:0; display:flex; flex-direction:column; gap:6px; }
+.field label, .field-title { font-size:11px; font-weight:750; color:#5c4a42; }
+input[type=number], select, .text-input {
+  border:1px solid #dcc7ba; border-radius:9px; background:#fffdfa; color:var(--ink); padding:9px 10px; outline:none; min-height:37px;
+}
+input[type=number]:focus, select:focus { border-color:var(--orange); box-shadow:0 0 0 3px #f45a2a21; }
+select { min-width:144px; }
+.segmented { display:flex; gap:4px; padding:4px; border:1px solid #ebd9ce; background:#f3e5dc; border-radius:10px; width:fit-content; flex-wrap:wrap; }
+.segmented button { border:0; background:transparent; color:#705d53; font-weight:700; font-size:11px; padding:8px 11px; border-radius:7px; }
+.segmented button.active { background:var(--panel); color:var(--orange-dark); box-shadow:0 1px 4px #4c25151c; }
+.size-pill { margin-left:auto; border:1px solid #e7d2c5; background:#fffaf5; color:#755c4d; border-radius:9px; padding:8px 10px; font-size:11px; font-weight:750; }
+.checkbox { display:flex; gap:8px; align-items:center; font-size:11px; color:#5c4a42; font-weight:650; }
+.checkbox input { accent-color:var(--orange); width:15px; height:15px; }
+.preview-box {
+  position:relative; flex:1; min-height:210px; display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(145deg,#302d31,#1e2025); border:1px solid #36343a; border-radius:13px; overflow:hidden;
+}
+.preview-box img { max-width:84%; max-height:270px; object-fit:contain; display:block; transition:transform .18s ease; }
+.rotate-badge { position:absolute; bottom:12px; right:12px; border:1px solid #ffffff2a; background:#0009; color:#fff; font-size:11px; padding:7px 10px; border-radius:8px; }
+.rotate-options { display:flex; gap:9px; flex-wrap:wrap; }
+.rotate-button {
+  flex:1; min-width:130px; border:1px solid var(--line); background:#fffdfa; color:#5c4a42; border-radius:12px; padding:14px 10px; font-size:12px; font-weight:800;
+}
+.rotate-button span { display:block; font-size:23px; margin-bottom:5px; }
+.rotate-button.active { background:#fff0e7; border-color:#f28a63; color:var(--orange-dark); box-shadow:inset 0 0 0 1px #f28a6322; }
+.slider-row { display:flex; align-items:center; gap:12px; }
+input[type=range] { flex:1; min-width:100px; accent-color:var(--orange); }
+.quality-value { min-width:45px; text-align:right; font-size:13px; font-weight:850; color:var(--orange-dark); }
+.info-card { border:1px solid var(--line); border-radius:12px; padding:13px 14px; background:#fffaf5; }
+.info-line { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:11px; color:var(--muted); }
+.info-line strong { color:var(--ink); font-size:12px; }
+.preset-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+.preset {
+  position:relative; text-align:left; border:1px solid var(--line); border-radius:12px; padding:13px 12px; background:#fffdfa; color:var(--ink); min-height:88px;
+}
+.preset strong { display:block; font-size:12px; margin:0 0 5px; }
+.preset small { display:block; font-size:10px; line-height:1.45; color:var(--muted); }
+.preset.active { border-color:var(--orange); background:#fff0e7; box-shadow:inset 0 0 0 1px #f45a2a30; }
+.preset.active::after { content:"✓"; position:absolute; right:10px; top:9px; color:var(--orange-dark); font-weight:900; }
+.pdf-hero { min-height:150px; display:flex; justify-content:center; align-items:center; gap:18px; padding:20px; border-radius:13px; background:linear-gradient(135deg,#fce6d7,#ffefc9); border:1px solid #efd4bd; }
+.pdf-icon { font-size:54px; filter:drop-shadow(0 5px 6px #a14a2222); }
+.pdf-copy strong { display:block; font-size:13px; margin-bottom:5px; }
+.pdf-copy p { color:#79665d; font-size:11px; line-height:1.5; max-width:310px; margin:0; }
+.footer { border-top:1px solid var(--line); padding:13px 20px 16px; display:flex; align-items:center; gap:10px; }
+.status { flex:1; min-width:0; color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.progress { width:110px; height:5px; border-radius:9px; overflow:hidden; background:#ead9ce; display:none; }
+.progress span { display:block; height:100%; width:0; border-radius:9px; background:linear-gradient(90deg,#ffb44b,var(--orange)); transition:width .12s; }
+.btn { border:1px solid #e2ccbd; border-radius:10px; padding:10px 16px; background:#fffdfa; color:#674e42; font-size:12px; font-weight:800; }
+.btn.primary { background:linear-gradient(135deg,#ff8d4b,#ef4e22); color:#fff; border-color:#e85b30; box-shadow:0 4px 10px #e9512e2e; }
+.btn.primary:hover { filter:brightness(1.03); transform:translateY(-1px); }
+.btn:disabled { opacity:.5; cursor:wait; transform:none; }
+@media (max-height:650px) { body{padding:9px}.header{padding:12px 16px 10px}.content{padding:12px 16px}.stage{height:250px}.preview-box{min-height:170px}.footer{padding:10px 16px} }
+</style>
+</head>
+<body>
+<div class="window">
+  <header class="header">
+    <div class="brand">🍊</div>
+    <div class="headcopy">
+      <div class="kicker">Tangerine · Quick tools</div>
+      <h1 id="title">Image tools</h1>
+      <div class="filename" id="filename">Preparing file…</div>
+    </div>
+    <button class="close" id="close" title="Close">×</button>
+  </header>
+  <main class="content">
+    <section class="panel hidden" id="cropPanel">
+      <p class="intro">Drag over the image to choose the area to keep. Drag inside the selection to move it, or use the corner handle to resize it.</p>
+      <div class="stage" id="cropStage">
+        <img id="cropImg" alt="Image crop preview">
+        <div class="stage-hint">SELECT AREA TO KEEP</div>
+        <div class="crop-selection" id="cropSelection"><span class="crop-handle" id="cropHandle"></span></div>
+      </div>
+      <div class="controls-row">
+        <div class="field">
+          <label for="aspect">Aspect ratio</label>
+          <select id="aspect">
+            <option value="free">Free</option><option value="1:1">1:1 · Square</option>
+            <option value="16:9">16:9 · Landscape</option><option value="9:16">9:16 · Portrait</option><option value="4:3">4:3 · Photo</option>
+          </select>
+        </div>
+        <div class="size-pill" id="cropDimensions">— × — px</div>
+      </div>
+    </section>
+
+    <section class="panel hidden" id="resizePanel">
+      <p class="intro">Set the output dimensions or scale the image by percentage. The original file stays untouched.</p>
+      <div class="preview-box"><img id="resizeImg" alt="Resize preview"></div>
+      <div class="controls-row">
+        <div class="field" style="flex:1">
+          <label>Resize method</label>
+          <div class="segmented"><button class="active" data-mode="pixels" id="pixelsMode">Pixels</button><button data-mode="percent" id="percentMode">Percentage</button></div>
+        </div>
+        <div class="size-pill" id="originalDimensions">Original: — × —</div>
+      </div>
+      <div id="pixelFields" class="controls-row">
+        <div class="field" style="flex:1"><label for="width">Width (px)</label><input type="number" id="width" min="1" max="12000" value="1280"></div>
+        <div class="field" style="flex:1"><label for="height">Height (px)</label><input type="number" id="height" min="1" max="12000" value="720"></div>
+        <label class="checkbox"><input type="checkbox" id="keepAspect" checked> Keep aspect ratio</label>
+      </div>
+      <div id="percentFields" class="hidden">
+        <div class="slider-row"><label class="field-title" for="percent">Scale</label><input type="range" id="percent" min="1" max="400" value="50"><span class="quality-value" id="percentValue">50%</span></div>
+      </div>
+    </section>
+
+    <section class="panel hidden" id="rotatePanel">
+      <p class="intro">Choose a rotation. The preview updates before you apply it.</p>
+      <div class="preview-box"><img id="rotateImg" alt="Rotate preview"><span class="rotate-badge" id="angleBadge">90° clockwise</span></div>
+      <div class="rotate-options">
+        <button class="rotate-button" data-angle="-90"><span>↶</span>90° counter-clockwise</button>
+        <button class="rotate-button active" data-angle="90"><span>↻</span>90° clockwise</button>
+        <button class="rotate-button" data-angle="180"><span>⤾</span>180°</button>
+      </div>
+    </section>
+
+    <section class="panel hidden" id="compressPanel">
+      <p class="intro">Choose the output format and balance image quality against file size. Metadata is stripped from the compressed copy.</p>
+      <div class="preview-box"><img id="compressImg" alt="Compression preview"></div>
+      <div class="controls-row">
+        <div class="field" style="flex:1"><label for="outputFormat">Output format</label><select id="outputFormat"><option value="jpg">JPG · smallest for photos</option><option value="webp">WEBP · modern and compact</option><option value="png">PNG · lossless</option></select></div>
+        <div class="size-pill" id="imageOriginalSize">Original: —</div>
+      </div>
+      <div class="info-card" id="qualityCard">
+        <div class="slider-row"><label class="field-title" for="quality">Quality</label><input type="range" id="quality" min="10" max="100" value="82"><span class="quality-value" id="qualityValue">82%</span></div>
+        <p class="intro" id="qualityHelp" style="margin-top:8px">Higher quality keeps more detail but usually creates a larger file.</p>
+      </div>
+      <div class="info-line"><span>Output name</span><strong id="imageOutputName">—</strong></div>
+    </section>
+
+    <section class="panel hidden" id="pdfcompressPanel">
+      <p class="intro">Pick a compression profile for the new PDF. Lower file sizes may reduce image sharpness, especially on scanned documents.</p>
+      <div class="pdf-hero"><div class="pdf-icon">📄</div><div class="pdf-copy"><strong id="pdfName">Document.pdf</strong><p id="pdfSummary">PDF compression uses Ghostscript to re-encode images and optimize the document structure.</p></div></div>
+      <div class="section-label">Compression profile</div>
+      <div class="preset-grid">
+        <button class="preset" data-preset="smallest"><strong>Smallest file</strong><small>For email, web sharing, and screen reading. Stronger image downsampling.</small></button>
+        <button class="preset active" data-preset="balanced"><strong>Balanced</strong><small>Good size and readable quality for everyday documents.</small></button>
+        <button class="preset" data-preset="print"><strong>Print quality</strong><small>Higher detail for documents that may be printed.</small></button>
+        <button class="preset" data-preset="best"><strong>Best quality</strong><small>Minimal downsampling; file may remain large.</small></button>
+      </div>
+      <div class="info-card"><div class="info-line"><span>Original file size</span><strong id="pdfOriginalSize">—</strong></div><div class="info-line" style="margin-top:8px"><span>Output</span><strong id="pdfOutputName">—</strong></div></div>
+    </section>
+  </main>
+  <footer class="footer">
+    <div class="status" id="status">Ready</div>
+    <div class="progress" id="progress"><span id="progressBar"></span></div>
+    <button class="btn" id="cancel">Cancel</button>
+    <button class="btn primary" id="apply">Apply</button>
+  </footer>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+let state = { filePath:'', action:'', naturalWidth:0, naturalHeight:0, sizeBytes:0, crop:null, aspect:'free', mode:'pixels', angle:90, preset:'balanced', busy:false };
+const TOOL_INFO = {
+  '__crop__': ['Crop image', 'Choose a region and save a cropped copy.'],
+  '__resize__': ['Resize image', 'Set a size that fits your workflow.'],
+  '__rotate__': ['Rotate image', 'Rotate the image and save a corrected copy.'],
+  '__compress__': ['Compress image', 'Reduce the file size with quality controls.'],
+  '__pdfcompress__': ['Compress PDF', 'Choose how aggressively the PDF should be compressed.'],
+};
+function bytes(value) {
+  if (!Number.isFinite(value) || value < 0) return '—';
+  if (value < 1024) return `${value} B`;
+  const units=['KB','MB','GB']; let n=value/1024, i=0;
+  while(n>=1024 && i<units.length-1){n/=1024;i++;}
+  return `${n.toFixed(n>=100?0:n>=10?1:2)} ${units[i]}`;
+}
+function showPanel(action) {
+  // Keep the mode mapping explicit and avoid exposing unrelated controls.
+  const map={'__crop__':'cropPanel','__resize__':'resizePanel','__rotate__':'rotatePanel','__compress__':'compressPanel','__pdfcompress__':'pdfcompressPanel'};
+  Object.values(map).forEach(id=>$(id).classList.add('hidden'));
+  $(map[action]).classList.remove('hidden');
+}
+function setStatus(message) { $('status').textContent = message; }
+function setBusy(busy) {
+  state.busy=busy; $('apply').disabled=busy; $('cancel').disabled=busy; $('close').disabled=busy;
+  $('apply').textContent=busy?'Working…':'Apply';
+  $('progress').style.display=busy?'block':'none';
+  if(!busy) $('progressBar').style.width='0%';
+}
+function imageLoaded(img) {
+  return new Promise((resolve,reject)=>{
+    img.onload=()=>resolve(); img.onerror=()=>reject(new Error('Preview could not be loaded. The file may not be a supported image.'));
+    if(img.complete && img.naturalWidth) resolve();
+  });
+}
+function initCrop() {
+  const stage=$('cropStage'), img=$('cropImg'), sel=$('cropSelection');
+  const imageBounds=()=>{
+    const sr=stage.getBoundingClientRect(), ir=img.getBoundingClientRect();
+    return {left:ir.left-sr.left,top:ir.top-sr.top,width:ir.width,height:ir.height};
+  };
+  const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+  function defaultCrop() {
+    const b=imageBounds(); if(!b.width||!b.height) return;
+    const ratio=ratioValue(); let w=b.width*.78,h=b.height*.78;
+    if(ratio){ if(w/h>ratio) w=h*ratio; else h=w/ratio; }
+    state.crop={x:b.left+(b.width-w)/2,y:b.top+(b.height-h)/2,w,h}; paint();
+  }
+  function ratioValue() {
+    if(state.aspect==='free') return null;
+    const [a,b]=state.aspect.split(':').map(Number); return a/b;
+  }
+  function paint() {
+    if(!state.crop) return;
+    sel.style.left=`${state.crop.x}px`; sel.style.top=`${state.crop.y}px`;
+    sel.style.width=`${state.crop.w}px`; sel.style.height=`${state.crop.h}px`;
+    const b=imageBounds();
+    const w=Math.max(1,Math.round(state.crop.w/b.width*img.naturalWidth));
+    const h=Math.max(1,Math.round(state.crop.h/b.height*img.naturalHeight));
+    $('cropDimensions').textContent=`${w} × ${h} px`;
+  }
+  let drag=null;
+  function point(e){const sr=stage.getBoundingClientRect(),b=imageBounds();return {x:clamp(e.clientX-sr.left,b.left,b.left+b.width),y:clamp(e.clientY-sr.top,b.top,b.top+b.height)};}
+  function clampRect(r){const b=imageBounds();r.w=clamp(r.w,8,b.width);r.h=clamp(r.h,8,b.height);r.x=clamp(r.x,b.left,b.left+b.width-r.w);r.y=clamp(r.y,b.top,b.top+b.height-r.h);}
+  stage.addEventListener('pointerdown',e=>{
+    if(state.busy) return;
+    const p=point(e), c=state.crop;
+    if(e.target===$('cropHandle')) {drag={kind:'resize',start:p,initial:{...c}};}
+    else if(e.target===sel && p.x>=c.x && p.x<=c.x+c.w && p.y>=c.y && p.y<=c.y+c.h) {drag={kind:'move',start:p,initial:{...c}};}
+    else {drag={kind:'draw',start:p,initial:{x:p.x,y:p.y,w:1,h:1}};state.crop={...drag.initial};}
+    stage.setPointerCapture(e.pointerId); e.preventDefault(); paint();
+  });
+  stage.addEventListener('pointermove',e=>{
+    if(!drag) return;
+    const p=point(e), b=imageBounds(), ratio=ratioValue(), dx=p.x-drag.start.x, dy=p.y-drag.start.y;
+    if(drag.kind==='move') {
+      state.crop={...drag.initial,x:drag.initial.x+dx,y:drag.initial.y+dy};
+    } else if(drag.kind==='resize') {
+      let w=Math.max(8,drag.initial.w+dx),h=Math.max(8,drag.initial.h+dy);
+      if(ratio){ if(w/h>ratio) h=w/ratio; else w=h*ratio; }
+      state.crop={...drag.initial,w,h};
+    } else {
+      let w=Math.max(8,Math.abs(dx)),h=Math.max(8,Math.abs(dy));
+      if(ratio){ if(w/h>ratio) h=w/ratio; else w=h*ratio; }
+      const x=dx<0?drag.start.x-w:drag.start.x, y=dy<0?drag.start.y-h:drag.start.y;
+      state.crop={x,y,w,h};
+    }
+    clampRect(state.crop); paint();
+  });
+  const stop=()=>{drag=null;}; stage.addEventListener('pointerup',stop);stage.addEventListener('pointercancel',stop);
+  $('aspect').addEventListener('change',()=>{state.aspect=$('aspect').value;defaultCrop();});
+  img.addEventListener('load',defaultCrop);
+  window.__cropData=()=>{
+    const b=imageBounds(),c=state.crop;
+    const x=Math.max(0,Math.round((c.x-b.left)/b.width*img.naturalWidth));
+    const y=Math.max(0,Math.round((c.y-b.top)/b.height*img.naturalHeight));
+    const width=Math.max(1,Math.min(img.naturalWidth-x,Math.round(c.w/b.width*img.naturalWidth)));
+    const height=Math.max(1,Math.min(img.naturalHeight-y,Math.round(c.h/b.height*img.naturalHeight)));
+    return {x,y,width,height};
+  };
+  window.__resetCrop=defaultCrop;
+}
+function updateResizeMode(mode) {
+  state.mode=mode;
+  $('pixelsMode').classList.toggle('active',mode==='pixels'); $('percentMode').classList.toggle('active',mode==='percent');
+  $('pixelFields').classList.toggle('hidden',mode!=='pixels'); $('percentFields').classList.toggle('hidden',mode!=='percent');
+}
+function syncResizeDimensions(from) {
+  if(!state.naturalWidth||!state.naturalHeight||!$('keepAspect').checked) return;
+  const ratio=state.naturalWidth/state.naturalHeight;
+  if(from==='width') $('height').value=Math.max(1,Math.round(Number($('width').value||1)/ratio));
+  else $('width').value=Math.max(1,Math.round(Number($('height').value||1)*ratio));
+}
+function syncCompression() {
+  const fmt=$('outputFormat').value;
+  $('qualityCard').classList.toggle('hidden',fmt==='png');
+  $('qualityHelp').textContent=fmt==='webp'?'WEBP quality is lossy; a lower number usually creates a smaller file.':'JPG quality is lossy; a lower number usually creates a smaller file.';
+  $('imageOutputName').textContent=state.filePath.split(/[\\/]/).pop().replace(/\.[^.]+$/,'')+'_compressed.'+fmt;
+}
+function getOptions() {
+  if(state.action==='__crop__') return {crop:window.__cropData()};
+  if(state.action==='__resize__') {
+    if(state.mode==='percent') return {mode:'percent',percent:Number($('percent').value)};
+    return {mode:'pixels',width:Number($('width').value),height:Number($('height').value),keepAspect:$('keepAspect').checked};
+  }
+  if(state.action==='__rotate__') return {angle:state.angle};
+  if(state.action==='__compress__') return {outputFormat:$('outputFormat').value,quality:Number($('quality').value)};
+  if(state.action==='__pdfcompress__') return {preset:state.preset};
+  return {};
+}
+$('pixelsMode').addEventListener('click',()=>updateResizeMode('pixels'));
+$('percentMode').addEventListener('click',()=>updateResizeMode('percent'));
+$('width').addEventListener('input',()=>syncResizeDimensions('width'));
+$('height').addEventListener('input',()=>syncResizeDimensions('height'));
+$('percent').addEventListener('input',()=>{$('percentValue').textContent=$('percent').value+'%';});
+$('quality').addEventListener('input',()=>{$('qualityValue').textContent=$('quality').value+'%';});
+$('outputFormat').addEventListener('change',syncCompression);
+document.querySelectorAll('.rotate-button').forEach(btn=>btn.addEventListener('click',()=>{
+  state.angle=Number(btn.dataset.angle);document.querySelectorAll('.rotate-button').forEach(b=>b.classList.toggle('active',b===btn));
+  $('rotateImg').style.transform=`rotate(${state.angle}deg)`;$('angleBadge').textContent=state.angle===-90?'90° counter-clockwise':state.angle===180?'180°':'90° clockwise';
+}));
+document.querySelectorAll('.preset').forEach(btn=>btn.addEventListener('click',()=>{
+  state.preset=btn.dataset.preset;document.querySelectorAll('.preset').forEach(b=>b.classList.toggle('active',b===btn));
+}));
+$('close').addEventListener('click',()=>window.api.closeTool());
+$('cancel').addEventListener('click',()=>window.api.closeTool());
+$('apply').addEventListener('click',()=>{
+  if(state.busy) return;
+  const opts=getOptions();
+  if(state.action==='__resize__' && state.mode==='pixels' && (!Number.isFinite(opts.width)||!Number.isFinite(opts.height)||opts.width<1||opts.height<1)) {setStatus('Enter valid width and height values.');return;}
+  setBusy(true);setStatus('Applying changes…');
+  window.api.applyTool({filePath:state.filePath,action:state.action,options:opts});
+});
+window.api.onToolProgress(p=>{ $('progressBar').style.width=`${Math.max(0,Math.min(100,p))}%`;setStatus(`Processing… ${Math.round(p)}%`); });
+window.api.onToolError(message=>{setBusy(false);setStatus(message||'The operation failed. Check that the required Linux tools are installed.');});
+window.api.onInitTool(async data=>{
+  state.filePath=data.filePath;state.action=data.action;state.sizeBytes=data.sizeBytes||0;
+  $('filename').textContent=data.fileName||data.filePath.split(/[\\/]/).pop();
+  $('title').textContent=(TOOL_INFO[state.action]||['Quick tool'])[0];
+  showPanel(state.action);
+  if(state.action==='__pdfcompress__') {
+    $('pdfName').textContent=data.fileName||'PDF document';$('pdfOriginalSize').textContent=bytes(state.sizeBytes);
+    $('pdfSummary').textContent=`Current file size: ${bytes(state.sizeBytes)}. Select a profile, then save a compressed copy.`;
+    $('pdfOutputName').textContent=(data.fileName||'document.pdf').replace(/\.pdf$/i,'')+'_compressed.pdf';
+    setStatus('Choose a compression profile.');return;
+  }
+  const imageEls=state.action==='__crop__'?[$('cropImg')]:state.action==='__resize__'?[$('resizeImg')]:state.action==='__rotate__'?[$('rotateImg')]:[$('compressImg')];
+  imageEls.forEach(img=>img.src=data.previewUrl);
+  try { await Promise.all(imageEls.map(imageLoaded)); }
+  catch(e) { setStatus(e.message);$('apply').disabled=true;return; }
+  const primary=imageEls[0];state.naturalWidth=primary.naturalWidth;state.naturalHeight=primary.naturalHeight;
+  if(state.action==='__crop__') { initCrop(); window.__resetCrop(); }
+  if(state.action==='__resize__') {
+    $('originalDimensions').textContent=`Original: ${state.naturalWidth} × ${state.naturalHeight}`;
+    $('width').value=state.naturalWidth;$('height').value=state.naturalHeight;
+  }
+  if(state.action==='__compress__') {
+    $('imageOriginalSize').textContent=`Original: ${bytes(state.sizeBytes)}`;
+    const ext=(data.fileName||'').split('.').pop().toLowerCase();
+    $('outputFormat').value=['jpg','jpeg','png','webp'].includes(ext)?(ext==='jpeg'?'jpg':ext):'webp';syncCompression();
+  }
+  setStatus(`${state.naturalWidth} × ${state.naturalHeight} px · Ready`);
+});
+</script>
+</body>
+</html>

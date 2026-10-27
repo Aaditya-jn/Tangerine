@@ -14,16 +14,18 @@ function getExt(filePath) {
 }
 
 function getOptions(ext) {
-  // Images: common targets first, then tools
+  // Image formats plus a compact set of interactive image tools.
+  // The tools open the same kind of focused editor dialogs shown in the
+  // inspiration screenshots instead of firing off fixed, uneditable actions.
   if (IMAGES.includes(ext)) {
     const fmts = ['jpg','png','webp','pdf','gif','bmp','tiff','ico','avif'].filter(e => e !== ext);
     return [
       ...fmts.map(e => ({ label: e.toUpperCase(), value: e, group: 'image' })),
+      { label: 'CROP',     value: '__crop__',     group: 'tool' },
+      { label: 'RESIZE',   value: '__resize__',   group: 'tool' },
+      { label: 'ROTATE',   value: '__rotate__',   group: 'tool' },
       { label: 'COMPRESS', value: '__compress__', group: 'tool' },
-      { label: 'RESIZE 50%',value: '__resize50__', group: 'tool' },
-      { label: 'RESIZE 25%',value: '__resize25__', group: 'tool' },
-      { label: 'GRAYSCALE', value: '__gray__',     group: 'tool' },
-      { label: 'ROTATE 90°',value: '__rotate90__', group: 'tool' },
+      { label: 'GRAYSCALE',value: '__gray__',     group: 'tool' },
     ];
   }
 
@@ -119,7 +121,7 @@ function ffmpegProgress(chunk, totalBuf) {
   return Math.min(99, Math.round(cur / total * 100));
 }
 
-async function convert(filePath, targetFormat, outputFolder, quality, onProgress) {
+async function convert(filePath, targetFormat, outputFolder, quality, onProgress, toolOptions = {}) {
   const ext  = getExt(filePath);
   const base = path.basename(filePath, path.extname(filePath));
   let outName, outPath, cmd, args;
@@ -132,8 +134,60 @@ async function convert(filePath, targetFormat, outputFolder, quality, onProgress
 
   // ── Tool actions ──────────────────────────────────────────────
   if (targetFormat === '__compress__') {
-    outPath = fp(`${base}_compressed`, ext === 'jpg' ? 'jpg' : 'png');
-    await run('convert', [filePath, '-quality', String(quality), outPath], { onProgress: p => onProgress(p) });
+    // Compression is configurable in the image-tool dialog. JPG/WebP use a
+    // quality factor; PNG uses lossless compression and preserves alpha.
+    const allowedFormats = ['jpg', 'png', 'webp'];
+    const fallbackFormat = ['jpg','jpeg','png','webp'].includes(ext) ? (ext === 'jpeg' ? 'jpg' : ext) : 'webp';
+    const outFmt = allowedFormats.includes(String(toolOptions.outputFormat || '').toLowerCase())
+      ? String(toolOptions.outputFormat).toLowerCase() : fallbackFormat;
+    const q = Math.max(10, Math.min(100, Math.round(Number(toolOptions.quality ?? quality) || 82)));
+    outPath = fp(`${base}_compressed`, outFmt);
+    const args = [filePath, '-auto-orient', '-strip'];
+    if (outFmt === 'jpg') {
+      args.push('-background', 'white', '-alpha', 'remove', '-alpha', 'off', '-sampling-factor', '4:2:0', '-quality', String(q));
+    } else if (outFmt === 'webp') {
+      args.push('-quality', String(q), '-define', 'webp:method=6');
+    } else {
+      args.push('-define', 'png:compression-level=9', '-define', 'png:compression-filter=5');
+    }
+    args.push(outPath);
+    await run('convert', args, { onProgress: p => onProgress(p) });
+    return outPath;
+  }
+
+  if (targetFormat === '__crop__') {
+    const crop = toolOptions.crop || {};
+    const x = Math.max(0, Math.round(Number(crop.x) || 0));
+    const y = Math.max(0, Math.round(Number(crop.y) || 0));
+    const w = Math.max(1, Math.round(Number(crop.width) || 1));
+    const h = Math.max(1, Math.round(Number(crop.height) || 1));
+    outPath = fp(`${base}_cropped`, ext);
+    await run('convert', [filePath, '-auto-orient', '-crop', `${w}x${h}+${x}+${y}`, '+repage', outPath], { onProgress: p => onProgress(p) });
+    return outPath;
+  }
+
+  if (targetFormat === '__resize__') {
+    const mode = toolOptions.mode === 'percent' ? 'percent' : 'pixels';
+    outPath = fp(`${base}_resized`, ext);
+    const args = [filePath, '-auto-orient'];
+    if (mode === 'percent') {
+      const pct = Math.max(1, Math.min(400, Math.round(Number(toolOptions.percent) || 50)));
+      args.push('-resize', `${pct}%`);
+    } else {
+      const width = Math.max(1, Math.min(12000, Math.round(Number(toolOptions.width) || 1280)));
+      const height = Math.max(1, Math.min(12000, Math.round(Number(toolOptions.height) || 720)));
+      args.push('-resize', toolOptions.keepAspect === false ? `${width}x${height}!` : `${width}x${height}`);
+    }
+    args.push(outPath);
+    await run('convert', args, { onProgress: p => onProgress(p) });
+    return outPath;
+  }
+
+  if (targetFormat === '__rotate__') {
+    const allowedAngles = [-90, 90, 180];
+    const angle = allowedAngles.includes(Number(toolOptions.angle)) ? Number(toolOptions.angle) : 90;
+    outPath = fp(`${base}_rotated`, ext);
+    await run('convert', [filePath, '-auto-orient', '-rotate', String(angle), '+repage', outPath], { onProgress: p => onProgress(p) });
     return outPath;
   }
 
@@ -217,9 +271,13 @@ async function convert(filePath, targetFormat, outputFolder, quality, onProgress
 
   if (targetFormat === '__pdfcompress__') {
     outPath = fp(`${base}_compressed`, 'pdf');
+    const presetMap = { smallest: '/screen', balanced: '/ebook', print: '/printer', best: '/prepress' };
+    const preset = presetMap[toolOptions.preset] || '/ebook';
     await run('gs', [
       '-sDEVICE=pdfwrite', '-dCompatibilityLevel=1.4',
-      '-dPDFSETTINGS=/ebook', '-dNOPAUSE', '-dQUIET', '-dBATCH',
+      `-dPDFSETTINGS=${preset}`, '-dDetectDuplicateImages=true',
+      '-dCompressFonts=true', '-dSubsetFonts=true',
+      '-dNOPAUSE', '-dQUIET', '-dBATCH',
       `-sOutputFile=${outPath}`, filePath
     ], { onProgress: p => onProgress(p) });
     return outPath;

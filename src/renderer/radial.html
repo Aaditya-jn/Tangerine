@@ -25,26 +25,25 @@ svg { position:absolute; inset:0; width:520px; height:520px; }
   to   { opacity:1; transform:scale(1); }
 }
 #svg { animation: menuIn 0.22s cubic-bezier(0.16,1,0.3,1) both; transform-origin: 260px 260px; }
+
+/* Fade the center button in without animating its transform. Its transform
+   is responsible for centering it, and a scale-only keyframe would override
+   translate(-50%, -50%) and shift the entire button down and right. */
 @keyframes centerFadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from { opacity:0; }
+  to   { opacity:1; }
 }
 
-/* ONE circle, one element — the previous version split the emoji and the
-   filename/cancel text into two separate positioned elements, and they
-   ended up rendering as two distinct overlapping dark circles instead of
-   one. Back to a single div with flex centering, which reliably centers
-   its content as a block with no second shape to misalign against. */
+/* The orange emoji sits inside the center button; filename/cancel text is a
+   separate element below it. Keep the button's positioning transform intact. */
 #center {
   position:absolute; top:50%; left:50%;
   transform:translate(-50%,-50%);
   width:100px; height:100px; border-radius:50%;
   background:rgba(18,18,18,0.92);
   border:1px solid rgba(255,255,255,0.1);
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:2px; cursor:pointer; padding:10px;
   box-shadow:0 8px 28px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
-  pointer-events:all; color:#fff; text-align:center;
+  pointer-events:all; cursor:pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   animation: centerFadeIn 0.22s ease-out both;
 }
@@ -53,14 +52,23 @@ svg { position:absolute; inset:0; width:520px; height:520px; }
   box-shadow: 0 10px 34px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.1);
 }
 #center .emoji {
-  font-size:22px; line-height:1;
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  font-size:28px; line-height:1;
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+  pointer-events:none;
 }
-#center .fname {
+#center-text {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%, 60px);
+  text-align:center; white-space:nowrap;
+  pointer-events:none; color:#fff;
+}
+#center-text .fname {
   font-size:8px; color:rgba(255,255,255,0.65); overflow:hidden;
-  text-overflow:ellipsis; white-space:nowrap; max-width:78px;
+  text-overflow:ellipsis; max-width:110px; display:block;
 }
-#center .cancel { font-size:10px; color:rgba(255,255,255,0.45); letter-spacing:0.3px; }
+#center-text .cancel { font-size:10px; color:rgba(255,255,255,0.45); letter-spacing:0.3px; }
 
 /* A small, isolated drag handle — same principle as the earlier drop-zone
    fix: drag capability lives on ONE dedicated element only, never on the
@@ -111,8 +119,10 @@ svg { position:absolute; inset:0; width:520px; height:520px; }
 <div id="handle" title="Drag to move">⠿</div>
 <div id="center">
   <div class="emoji">🍊</div>
-  <div class="fname" id="fname"></div>
-  <div class="cancel">✕ cancel</div>
+</div>
+<div id="center-text">
+  <span class="fname" id="fname"></span>
+  <span class="cancel">✕ cancel</span>
 </div>
 <div id="tooltip"></div>
 
@@ -145,9 +155,8 @@ const VALUE_ICONS = {
   '__pdfcompress__': '🗜️', '__compress__': '🗜️',       // shrink
   '__pdfmerge__': '🔗',                                  // combine files
   '__pdfsplit__': '✂️',                                  // split into pieces
-  '__resize50__': '📐', '__resize25__': '📐',            // resize
+  '__crop__': '✂️', '__resize__': '📐', '__rotate__': '🔄', // image tools
   '__gray__': '◐',                                       // grayscale
-  '__rotate90__': '🔄',                                  // rotate
   '__extractaudio__': '🎵', '__trim__': '✂️',            // audio/video tools
   '__extract__': '📦',                                   // archive extract
 };
@@ -166,10 +175,10 @@ function buildColors(theme) {
 
 const LABELS = {
   '__compress__':     'Compress image',
-  '__resize50__':     'Resize to 50%',
-  '__resize25__':     'Resize to 25%',
+  '__crop__':         'Crop image',
+  '__resize__':       'Resize image',
+  '__rotate__':       'Rotate image',
   '__gray__':         'Grayscale',
-  '__rotate90__':     'Rotate 90°',
   '__extractaudio__': 'Extract as MP3',
   '__trim__':         'Trim first 30s',
   '__pdf2img__':      'Pages → PNG',
@@ -295,7 +304,9 @@ function render() {
       tooltip.classList.remove('show');
     });
     seg.addEventListener('click', () => {
-      window.api.sendConvert(filePath, opt.value);
+      const interactive = ['__crop__', '__resize__', '__rotate__', '__compress__', '__pdfcompress__'];
+      if (interactive.includes(opt.value)) window.api.openTool(filePath, opt.value);
+      else window.api.sendConvert(filePath, opt.value);
     });
 
     g.appendChild(seg);
@@ -319,6 +330,7 @@ function hexToRgba(hex, alpha) {
 }
 
 document.getElementById('center').addEventListener('click', () => window.api.sendCloseRadial());
+document.getElementById('center-text').addEventListener('click', () => window.api.sendCloseRadial());
 </script>
 </body>
 </html>
